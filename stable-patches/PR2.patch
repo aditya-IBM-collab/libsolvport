@@ -1,0 +1,45 @@
+fix: use fopen("rb") in solv_xfopen.c to bypass z/OS AUTOCVT on binary files
+
+On z/OS, fopen(path, "r") (text mode) on a file tagged ISO8859-1 T=on under
+_BPXK_AUTOCVT=ON triggers automatic ISO8859-1->EBCDIC byte conversion on
+every read. For binary files (gzip, zstd, xz, bz2), this corrupts the data.
+The failure manifests as EDC5247I Operation not supported (errno=247,
+errno2=0x0594003D) when libsolv tries to open cached metadata files.
+
+Changing to fopen("rb") bypasses AUTOCVT entirely. On Linux/macOS the "b"
+flag is a no-op per the C standard, so this change is safe to upstream.
+
+Fixes: lzopen(), zstdopen(), zchunkopen(), solv_xfopen() fallback.
+
+diff --git a/ext/solv_xfopen.c b/ext/solv_xfopen.c
+--- a/ext/solv_xfopen.c
++++ b/ext/solv_xfopen.c
+@@ -198,7 +198,7 @@ static LZFILE *lzopen(const char *path, const char *mode, int fd, int isxz)
+   if (!path)
+     fp = fdopen(fd, encoding ? "w" : "r");
+   else
+-    fp = fopen(path, encoding ? "w" : "r");
++    fp = fopen(path, encoding ? "wb" : "rb");
+   if (!fp)
+
+@@ -398,7 +398,7 @@ static ZSTDFILE *zstdopen(const char *path, const char *mode, int fd)
+   if (!path)
+     fp = fdopen(fd, encoding ? "w" : "r");
+   else
+-    fp = fopen(path, encoding ? "w" : "r");
++    fp = fopen(path, encoding ? "wb" : "rb");
+   if (!fp)
+
+@@ -606,7 +606,7 @@ static void *zchunkopen(const char *path, const char *mode, int fd)
+   if (!path)
+     fp = fdopen(fd, mode);
+   else
+-    fp = fopen(path, mode);
++    fp = fopen(path, strcmp(mode, "r") == 0 ? "rb" : mode);
+   if (!fp)
+
+@@ -725,7 +725,7 @@ solv_xfopen(const char *fn, const char *mode)
+ #endif
+-  return fopen(fn, mode);
++  return fopen(fn, strcmp(mode, "r") == 0 ? "rb" : mode);
+ }

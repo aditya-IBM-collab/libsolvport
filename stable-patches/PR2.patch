@@ -1,25 +1,3 @@
-fix: use fopen("rb"/"wb") in solv_xfopen.c to bypass z/OS AUTOCVT on binary files
-
-On z/OS, fopen(path, "r") (text mode) on a file tagged ISO8859-1 T=on under
-_BPXK_AUTOCVT=ON triggers automatic ISO8859-1->EBCDIC byte conversion on
-every read. For binary files (gzip, zstd, xz, bz2), this corrupts the data.
-The failure manifests as EDC5247I Operation not supported (errno=247,
-errno2=0x0594003D) when libsolv tries to open cached metadata files.
-
-Changing to fopen("rb"/"wb") bypasses AUTOCVT entirely. On Linux/macOS the
-"b" flag is a no-op per the C standard (string.h is already included at
-line 12), so this change is safe to upstream.
-
-A small static helper binmode() is introduced so that both read and write
-paths are handled symmetrically, avoiding the asymmetry that would result
-from only special-casing "r".
-
-Note: zchunkopen() already contains an explicit guard (strcmp(mode,"r")!=0
-→ return 0) so it only ever receives "r" — the binmode() call there is
-defensive but harmless.
-
-Fixes: lzopen(), zstdopen(), zchunkopen(), solv_xfopen() fallback.
-
 diff --git a/ext/solv_xfopen.c b/ext/solv_xfopen.c
 --- a/ext/solv_xfopen.c
 +++ b/ext/solv_xfopen.c
